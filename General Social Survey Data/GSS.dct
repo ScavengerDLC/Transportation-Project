@@ -1,0 +1,21 @@
+
+infile dictionary {
+
+_column(1) 	 numeric 		 BALLOT 		 %20f 		 "ballot used for interview" 
+_column(6) 	 numeric 		 AGE 		 %20f 		 "age of respondent" 
+_column(11) 	 numeric 		 SEX 		 %20f 		 "respondents sex" 
+_column(16) 	 numeric 		 RACE 		 %20f 		 "race of respondent" 
+_column(21) 	 numeric 		 HOMPOP 		 %20f 		 "number of persons in household" 
+_column(26) 	 numeric 		 BABIES 		 %20f 		 "household members less than 6 yrs old" 
+_column(31) 	 numeric 		 PRETEEN 		 %20f 		 "household members 6 thru 12 yrs old" 
+_column(36) 	 numeric 		 TEENS 		 %20f 		 "household members 13 thru 17 yrs old" 
+_column(41) 	 numeric 		 ADULTS 		 %20f 		 "household members 18 yrs and older" 
+_column(45) 	 numeric 		 REGION 		 %20f 		 "region of interview" 
+_column(47) 	 numeric 		 SIZE 		 %20f 		 "Size of place in 1000s" 
+_column(52) 	 numeric 		 NATCRIME 		 %20f 		 "halting rising crime rate" 
+_column(57) 	 numeric 		 NATMASS 		 %20f 		 "mass transportation" 
+_column(62) 	 numeric 		 TRUST 		 %20f 		 "can people be trusted" 
+_column(67) 	 numeric 		 FEAR 		 %20f 		 "afraid to walk at night in neighborhood" 
+_column(72) 	 numeric 		 YEAR 		 %20f 		 "GSS year for this respondent" 
+_column(77) 	 numeric 		 ID_ 		 %20f 		 "Respondent id number" 
+}

@@ -1,0 +1,391 @@
+library(dplyr)
+library(xlsx)
+library(tidyverse)
+
+
+################################################
+# Set your directory for main file for project #
+################################################
+
+path <- "C:/Users/zades/Desktop/Transportation Project/"
+
+
+
+### Read in First File to See what the function will need to look like
+usage_2018 <- read.xlsx(paste0(path, "American Community Survey Data/ACSST5Y2018.S0804-2024-11-27T195010.xlsx"), "Data")
+
+state_names <- read.csv(paste0(path, "Census Data/state_names.csv"))
+
+### Similar Initial Column Structure to Census Data. However it includes Puerto Rico,
+### so it'll need to be on the list also. Also, remove Total name, is not included
+### in this dataset. Overall process will be similar to national_spending_data_cleaning.r
+### See that file for more explanation of each step
+
+puerto_rico <- "Puerto Rico"
+
+state_names <- rbind(state_names, puerto_rico)
+
+state_names <- state_names |> filter(names != "Total")
+
+### var - moe refers to a variables margin of error column for a particular state
+for (i in 1:52) {
+  name <- state_names[i,]
+  lower_bound <- 2 + 8 * (i-1)
+  upper_bound <- 9 + 8 * (i-1)
+  names(usage_2018)[lower_bound:upper_bound] <-
+    paste0(name, "_", c("total - estimate", "total - moe", "car alone - estimate", 
+                        "car alone - moe", "carpool - estimate", "carpool - moe",
+                        "transit - estimate", "transit - moe"))
+}
+
+### Filter Out Rows that are artifacts from the old format
+
+usage_2018 <- usage_2018 |>
+  filter(`Alabama_total - estimate` !=  "Total" &
+         `Alabama_total - estimate` !=  "Estimate" &
+         !is.na(`Alabama_total - estimate`))
+
+### Change row 1 to type and change values to be more machine friendly
+names(usage_2018)[1] <- "type"
+
+usage_2018 <- usage_2018 |>
+  mutate(type = str_replace_all(type, " ", "_")) |>
+  mutate(type = tolower(type)) |>
+  distinct(type, .keep_all = TRUE)
+
+### Filter out Puerto Rico It's not included in the other datasets
+usage_2018 <- usage_2018 |> select(!contains("Puerto Rico"))
+
+### Change Names of Some Types to be shorter and more readable
+usage_2018 <- usage_2018 |> 
+  mutate(
+    type = ifelse(type == "workers_16_years_and_over", "workers", 
+           ifelse(type == "16_to_19_years", "age_16_19", 
+           ifelse(type == "20_to_24_years", "age_20_24",
+           ifelse(type == "25_to_44_years", "age_25_44",
+           ifelse(type == "45_to_54_years", "age_45_54",
+           ifelse(type == "55_to_59_years", "age_55_59",
+           ifelse(type == "60_years_and_over", "age_60_plus",
+           ifelse(type == "median_age_(years)", "median_age",
+           ifelse(type == "black_or_african_american", as.character("black"),
+           ifelse(type == "american_indian_and_alaska_native", "american_indian",
+           ifelse(type == "native_hawaiian_and_other_pacific_islander", "pacific_islander",
+           ifelse(type == "some_other_race", "other",
+           ifelse(type == "two_or_more_races", "mixed_race",
+           ifelse(type == "hispanic_or_latino_origin_(of_any_race)", "hispanic_latino",
+           ifelse(type == "white_alone,_not_hispanic_or_latino_origin", as.character("white_only"),
+           ifelse(type == "less_than_10_minutes", "0_10_mins",
+           ifelse(type == "10_to_14_minutes", "10_14_mins", 
+           ifelse(type == "15_to_19_minutes", "15_19_mins", 
+           ifelse(type == "20_to_24_minutes", "20_24_mins", 
+           ifelse(type == "25_to_29_minutes", "25_29_mins", 
+           ifelse(type == "30_to_34_minutes", "30_34_mins", 
+           ifelse(type == "35_to_44_minutes", "35_44_mins", 
+           ifelse(type == "45_to_59_minutes", "45_59_mins", 
+           ifelse(type == "60_or_more_minutes", "60_plus_mins", 
+           ifelse(type == "mean_travel_time_to_work_(minutes)", "mean_minutes_to_work", 
+           ifelse(type == "$1_to_$9,999_or_loss", "income_9.9k_lower", 
+           ifelse(type == "$10,000_to_$14,999", "income_10k_14.9K", 
+           ifelse(type == "$15,000_to_$24,999", "income_15k_24.9K", 
+           ifelse(type == "$25,000_to_$34,999", "income_25k_34.9K", 
+           ifelse(type == "$35,000_to_$49,999", "income_35k_49.9K", 
+           ifelse(type == "$50,000_to_$64,999", "income_50k_64.9K", 
+           ifelse(type == "$65,000_to_$74,999", "income_65k_74.9K", 
+           ifelse(type == "$75,000_or_more", "income_75k_plus", 
+           ifelse(type == "median_earnings_(dollars)", "median_income", type)
+                )))))))))))))))))))))))))))))))))
+  )
+
+### Pivot
+usage_2018 <- usage_2018 |> 
+  pivot_longer(cols = c("Alabama_total - estimate":"Wyoming_transit - moe"), 
+                                         names_to = "state")
+
+### Adjust Names 
+usage_2018 <- usage_2018 |>
+  mutate(type = paste0(type, "_", gsub("^[^_]*_", "", state))) |>
+  mutate(state = gsub("_.*", "", state)) |>
+  mutate(year = 2018) 
+
+### Get rid of % and , in values for when we need to do math with them. 
+### Basically every value that isn't tagged with worker_ is a percent
+### I am making note of this here. 
+
+usage_2018 <- usage_2018 |>
+  mutate(value = str_remove_all(value, "%")) |>
+  mutate(value = str_remove_all(value, ","))
+
+
+### Pivot Again to Get the Dataframe in Year-State Format. 
+### Each Row is a Year-State
+
+usage_2018 <- usage_2018 |>
+  mutate(type = str_replace_all(type, " - ", "_")) |>
+  pivot_wider(names_from = type, values_from = value) |>
+  select(c("year", "state", 
+           "workers_total_estimate":"white_transit_moe",
+           "income_9.9k_lower_total_estimate":"income_75k_plus_transit_moe",
+           "0_10_mins_total_estimate":"60_plus_mins_transit_moe"))
+
+transportation_usage <- data.frame(matrix(NA, nrow = 1, ncol = 234))
+
+names(transportation_usage) <- names(usage_2018)
+
+transportation_usage <- rbind(usage_2018)
+
+##########################################
+# Create Function for Other Spreadsheets #
+##########################################
+
+### Enter file_select as .xlsx file name
+acs_clean <- function(file_select, year_select){
+  df <- read.xlsx(paste0(path, "American Community Survey Data/", as.character({{file_select}})), "Data")
+  
+  ### var - moe refers to a variables margin of error column for a particular state
+  for (i in 1:52) {
+    name <- state_names[i,]
+    lower_bound <- 2 + 8 * (i-1)
+    upper_bound <- 9 + 8 * (i-1)
+    names(df)[lower_bound:upper_bound] <-
+      paste0(name, "_", c("total - estimate", "total - moe", "car alone - estimate", 
+                          "car alone - moe", "carpool - estimate", "carpool - moe",
+                          "transit - estimate", "transit - moe"))
+  }
+  
+  ### Filter Out Rows that are artifacts from the old format
+  
+  df <- df |>
+    filter(`Alabama_total - estimate` !=  "Total" &
+             `Alabama_total - estimate` !=  "Estimate" &
+             !is.na(`Alabama_total - estimate`))
+  
+  ### Change row 1 to type and change values to be more machine friendly
+  names(df)[1] <- "type"
+  
+  df <- df |>
+    mutate(type = str_replace_all(type, " ", "_")) |>
+    mutate(type = tolower(type)) |>
+    distinct(type, .keep_all = TRUE)
+  
+  ### Filter out Puerto Rico It's not included in the other datasets
+  df <- df |> select(!contains("Puerto Rico"))
+  
+  ### Change Names of Some Types to be shorter and more readable
+  df <- df |> 
+    mutate(
+      type = ifelse(type == "workers_16_years_and_over", "workers", 
+             ifelse(type == "16_to_19_years", "age_16_19", 
+             ifelse(type == "20_to_24_years", "age_20_24",
+             ifelse(type == "25_to_44_years", "age_25_44",
+             ifelse(type == "45_to_54_years", "age_45_54",
+             ifelse(type == "55_to_59_years", "age_55_59",
+             ifelse(type == "60_years_and_over", "age_60_plus",
+             ifelse(type == "median_age_(years)", "median_age",
+             ifelse(type == "black_or_african_american", as.character("black"),
+             ifelse(type == "american_indian_and_alaska_native", "american_indian",
+             ifelse(type == "native_hawaiian_and_other_pacific_islander", "pacific_islander",
+             ifelse(type == "some_other_race", "other",
+             ifelse(type == "two_or_more_races", "mixed_race",
+             ifelse(type == "hispanic_or_latino_origin_(of_any_race)", "hispanic_latino",
+             ifelse(type == "white_alone,_not_hispanic_or_latino_origin", as.character("white_only"),
+             ifelse(type == "less_than_10_minutes", "0_10_mins",
+             ifelse(type == "10_to_14_minutes", "10_14_mins", 
+             ifelse(type == "15_to_19_minutes", "15_19_mins", 
+             ifelse(type == "20_to_24_minutes", "20_24_mins", 
+             ifelse(type == "25_to_29_minutes", "25_29_mins", 
+             ifelse(type == "30_to_34_minutes", "30_34_mins", 
+             ifelse(type == "35_to_44_minutes", "35_44_mins", 
+             ifelse(type == "45_to_59_minutes", "45_59_mins", 
+             ifelse(type == "60_or_more_minutes", "60_plus_mins", 
+             ifelse(type == "mean_travel_time_to_work_(minutes)", "mean_minutes_to_work", 
+             ifelse(type == "$1_to_$9,999_or_loss", "income_9.9k_lower", 
+             ifelse(type == "$10,000_to_$14,999", "income_10k_14.9K", 
+             ifelse(type == "$15,000_to_$24,999", "income_15k_24.9K", 
+             ifelse(type == "$25,000_to_$34,999", "income_25k_34.9K", 
+             ifelse(type == "$35,000_to_$49,999", "income_35k_49.9K", 
+             ifelse(type == "$50,000_to_$64,999", "income_50k_64.9K", 
+             ifelse(type == "$65,000_to_$74,999", "income_65k_74.9K", 
+             ifelse(type == "$75,000_or_more", "income_75k_plus", 
+             ifelse(type == "median_earnings_(dollars)", "median_income", type)
+             )))))))))))))))))))))))))))))))))
+    )
+  
+  ### Pivot
+  df <- df |> 
+    pivot_longer(cols = c("Alabama_total - estimate":"Wyoming_transit - moe"), 
+                 names_to = "state")
+  
+  ### Adjust Names 
+  df <- df |>
+    mutate(type = paste0(type, "_", gsub("^[^_]*_", "", state))) |>
+    mutate(state = gsub("_.*", "", state)) |>
+    mutate(year = {{year_select}}) 
+  
+  ### Get rid of % and , in values for when we need to do math with them. 
+  ### Basically every value that isn't tagged with worker_ is a percent
+  ### I am making note of this here. 
+  
+  df <- df |>
+    mutate(value = str_remove_all(value, "%")) |>
+    mutate(value = str_remove_all(value, ","))
+  
+  
+  ### Pivot Again to Get the Dataframe in Year-State Format. 
+  ### Each Row is a Year-State
+  
+  df <- df |>
+    mutate(type = str_replace_all(type, " - ", "_")) |>
+    pivot_wider(names_from = type, values_from = value) |>
+    select(c("year", "state", 
+             "workers_total_estimate":"white_transit_moe",
+             "income_9.9k_lower_total_estimate":"income_75k_plus_transit_moe",
+             "0_10_mins_total_estimate":"60_plus_mins_transit_moe"))
+  
+  transportation_usage <- rbind(transportation_usage, df)
+}
+
+transportation_usage <- acs_clean("ACSST5Y2019.S0804-2024-11-27T195003.xlsx", 2019)
+
+transportation_usage <- acs_clean("ACSST5Y2020.S0804-2024-11-27T194957.xlsx", 2020)
+  
+transportation_usage <- acs_clean("ACSST5Y2021.S0804-2024-11-27T194947.xlsx", 2021)
+  
+transportation_usage <- acs_clean("ACSST5Y2022.S0804-2024-11-27T194935.xlsx", 2022)
+  
+#######################
+# Data from US Totals #
+#######################
+
+acs_total_clean <- function(file_select, year_select){
+  df <- read.xlsx(paste0(path, "American Community Survey Data/", as.character({{file_select}})), "Data")
+  
+  name <- "Total"
+  
+  names(df)[2:9] <- paste0(name, "_", c("total - estimate", "total - moe",  
+                                        "car alone - estimate","car alone - moe", "carpool - estimate", 
+                                        "carpool - moe", "transit - estimate", "transit - moe"))
+  
+  ### Filter Out Rows that are artifacts from the old format
+  
+  df <- df |>
+    filter(`Total_total - estimate` !=  "Total" &
+             `Total_total - estimate` !=  "Estimate" &
+             !is.na(`Total_total - estimate`))
+  
+  ### Change row 1 to type and change values to be more machine friendly
+  names(df)[1] <- "type"
+  
+  df <- df |>
+    mutate(type = str_replace_all(type, " ", "_")) |>
+    mutate(type = tolower(type)) |>
+    distinct(type, .keep_all = TRUE)
+  
+  ### Change Names of Some Types to be shorter and more readable
+  df <- df |> 
+    mutate(
+      type = ifelse(type == "workers_16_years_and_over", "workers", 
+             ifelse(type == "16_to_19_years", "age_16_19", 
+             ifelse(type == "20_to_24_years", "age_20_24",
+             ifelse(type == "25_to_44_years", "age_25_44",
+             ifelse(type == "45_to_54_years", "age_45_54",
+             ifelse(type == "55_to_59_years", "age_55_59",
+             ifelse(type == "60_years_and_over", "age_60_plus",
+             ifelse(type == "median_age_(years)", "median_age",
+             ifelse(type == "black_or_african_american", as.character("black"),
+             ifelse(type == "american_indian_and_alaska_native", "american_indian",
+             ifelse(type == "native_hawaiian_and_other_pacific_islander", "pacific_islander",
+             ifelse(type == "some_other_race", "other",
+             ifelse(type == "two_or_more_races", "mixed_race",
+             ifelse(type == "hispanic_or_latino_origin_(of_any_race)", "hispanic_latino",
+             ifelse(type == "white_alone,_not_hispanic_or_latino_origin", as.character("white_only"),
+             ifelse(type == "less_than_10_minutes", "0_10_mins",
+             ifelse(type == "10_to_14_minutes", "10_14_mins", 
+             ifelse(type == "15_to_19_minutes", "15_19_mins", 
+             ifelse(type == "20_to_24_minutes", "20_24_mins", 
+             ifelse(type == "25_to_29_minutes", "25_29_mins", 
+             ifelse(type == "30_to_34_minutes", "30_34_mins", 
+             ifelse(type == "35_to_44_minutes", "35_44_mins", 
+             ifelse(type == "45_to_59_minutes", "45_59_mins", 
+             ifelse(type == "60_or_more_minutes", "60_plus_mins", 
+             ifelse(type == "mean_travel_time_to_work_(minutes)", "mean_minutes_to_work", 
+             ifelse(type == "$1_to_$9,999_or_loss", "income_9.9k_lower", 
+             ifelse(type == "$10,000_to_$14,999", "income_10k_14.9K", 
+             ifelse(type == "$15,000_to_$24,999", "income_15k_24.9K", 
+             ifelse(type == "$25,000_to_$34,999", "income_25k_34.9K", 
+             ifelse(type == "$35,000_to_$49,999", "income_35k_49.9K", 
+             ifelse(type == "$50,000_to_$64,999", "income_50k_64.9K", 
+             ifelse(type == "$65,000_to_$74,999", "income_65k_74.9K", 
+             ifelse(type == "$75,000_or_more", "income_75k_plus", 
+             ifelse(type == "median_earnings_(dollars)", "median_income", type)
+             )))))))))))))))))))))))))))))))))
+    )
+  
+  ### Pivot
+  df <- df |> 
+    pivot_longer(cols = c("Total_total - estimate":"Total_transit - moe"), 
+                 names_to = "state")
+  
+  ### Adjust Names 
+  df <- df |>
+    mutate(type = paste0(type, "_", gsub("^[^_]*_", "", state))) |>
+    mutate(state = gsub("_.*", "", state)) |>
+    mutate(year = {{year_select}}) 
+  
+  ### Get rid of % and , in values for when we need to do math with them. 
+  ### Basically every value that isn't tagged with worker_ is a percent
+  ### I am making note of this here. 
+  
+  df <- df |>
+    mutate(value = str_remove_all(value, "%")) |>
+    mutate(value = str_remove_all(value, ","))
+  
+  
+  ### Pivot Again to Get the Dataframe in Year-State Format. 
+  ### Each Row is a Year-State
+  
+  df <- df |>
+    mutate(type = str_replace_all(type, " - ", "_")) |>
+    pivot_wider(names_from = type, values_from = value) |>
+    select(c("year", "state", 
+             "workers_total_estimate":"white_transit_moe",
+             "income_9.9k_lower_total_estimate":"income_75k_plus_transit_moe",
+             "0_10_mins_total_estimate":"60_plus_mins_transit_moe"))
+  
+  transportation_usage <- rbind(transportation_usage, df)
+}
+
+transportation_usage <- acs_total_clean("ACSST5Y2022.S0802-2024-11-28T011421.xlsx", 2022)
+
+transportation_usage <- acs_total_clean("ACSST5Y2021.S0802-2024-11-28T011424.xlsx", 2021)
+
+transportation_usage <- acs_total_clean("ACSST5Y2020.S0802-2024-11-28T011429.xlsx", 2020)
+
+transportation_usage <- acs_total_clean("ACSST5Y2019.S0802-2024-11-28T011434.xlsx", 2019)
+
+transportation_usage <- acs_total_clean("ACSST5Y2018.S0802-2024-11-28T011442.xlsx", 2018)
+
+transportation_usage <- acs_total_clean("ACSST5Y2017.S0802-2024-11-28T011446.xlsx", 2017)
+
+transportation_usage <- acs_total_clean("ACSST5Y2016.S0802-2024-11-28T011448.xlsx", 2016)
+
+transportation_usage <- acs_total_clean("ACSST5Y2015.S0802-2024-11-28T011454.xlsx", 2015)
+
+transportation_usage <- acs_total_clean("ACSST5Y2014.S0802-2024-11-28T011458.xlsx", 2014)
+
+transportation_usage <- acs_total_clean("ACSST5Y2013.S0802-2024-11-28T011503.xlsx", 2013)
+
+transportation_usage <- acs_total_clean("ACSST5Y2012.S0802-2024-11-28T011508.xlsx", 2012)
+
+transportation_usage <- acs_total_clean("ACSST5Y2011.S0802-2024-11-28T011513.xlsx", 2011)
+
+transportation_usage <- acs_total_clean("ACSST5Y2010.S0802-2024-11-28T011516.xlsx", 2010)
+
+### Make Dataframe with no Margin of Error Variables
+
+transporation_usage_no_moe <- transportation_usage |> select(!contains("moe"))
+
+### Export Dataframes as xlsx files
+
+write.xlsx(transporation_usage_no_moe, paste0(path, "transportation_usage.xlsx"), sheetName = "2022_2010")
+
+write.xlsx(transportation_usage, paste0(path, "transportation_usage_w_margin_of_errors.xlsx"), sheetName = "2022_2010")
